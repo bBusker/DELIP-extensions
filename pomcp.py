@@ -151,8 +151,9 @@ class POMCP():
         s_next, o_next, _ = self.Generator(s, action)
         if o_next == observation:
             return s_next
-        result = self.PosteriorSample(Bh, action, observation)
-        return result
+        return None
+        # result = self.PosteriorSample(Bh, action, observation)
+        # return result
 
     # Updates belief by sampling posterior
     def UpdateBelief(self, action, observation):
@@ -160,4 +161,7 @@ class POMCP():
 
         self.tree.nodes[-1][4] = []
         for _ in range(self.no_particles):
-            self.tree.nodes[-1][4].append(self.PosteriorSample(prior, action, observation))
+            res = self.PosteriorSample(prior, action, observation)
+            if res is not None:
+                self.tree.nodes[-1][4].append(res)
+                #self.tree.nodes[-1][4].append(self.PosteriorSample(prior, action, observation))
