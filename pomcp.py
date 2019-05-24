@@ -1,4 +1,4 @@
-from delip.utils import BuildTree, UCB
+from utils import BuildTree, UCB
 import numpy as np
 from numpy.random import binomial, choice
 from joblib import Parallel, delayed, parallel_backend

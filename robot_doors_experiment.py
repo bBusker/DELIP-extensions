@@ -1,58 +1,74 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from delip import utils
-from pomdpy.pomdp import Model, StepResult
+import utils
+import pomcp
 
-
-class RobotDoorsExperiment(Model):
+#TODO: discretize observations!!!!
+class RobotDoorsExperiment():
     def __init__(self):
+        self.action_space = ["left", "open", "right"]
+        self.state_space = np.linspace(-15, 15, 300)
+        self.obs_space = [experiment.get_observation(x) for x in self.state_space]
         self.initial_robot_state = np.clip(np.random.normal(0, 5), -15, 15)
-        self.robot_state = self.initial_robot_state
+        self.robot_state = np.searchsorted(self.state_space, self.initial_robot_state)
+        self.open_action = False
+
         self.door_locations = [-12, -6, 6, 12]
         self.goal_door = 2
         self.goal_door_open = False
 
-    def reset_for_simulation(self):
-        self.robot_state = self.initial_robot_state
-
-    def reset_for_epoch(self):
-        self.robot_state = self.initial_robot_state
-
-    def update(self, sim_data):
-        pass
-
-    def generate_step(self, state, action):
+    def generate_step_oracle(self, state, action):
         if action is None:
             print("Tried to generate a step with a null action")
             return None
 
-        res = StepResult()
-        res.action = action
-        res.observation = self.get_observation(self.robot_state)
-        res.reward = self.get_reward(self.robot_state, open)
-        res.next_state = self.take_action(action)
-        res.is_terminal = self.is_terminal
+        i_action = action_space.index(action)
+        i_state = np.where(state_space == state)[0]
 
-    def sample_an_init_state(self):
-        return self.sample_state_uninformed()
+        i_next = np.clip(i_state+i_action-1, 0, self.state_space.size-1)
+        next_state = self.state_space[i_next]
+        observation = self.get_observation(next_state)  # TODO: should this be observation indicies?
+        reward = self.get_reward(next_state, action == 1)
+        return next_state, observation, reward
 
-    def sample_state_uninformed(self):
-        return np.random.uniform(-15, 15)
+    def generate_step_vi(self, state, action):
+        if action is None:
+            print("Tried to generate a step with a null action")
+            return None
 
-    def sample_state_informed(self, belief):
-        pass
+        observation = self.get_observation(self.robot_state)
+        reward = self.get_reward(self.robot_state, open)
+        next_state = self.take_action(action)
+        is_terminal = self.is_terminal
+        return next_state, observation, reward
 
-    
+    def get_observation_continuous(self, curr_pos=None):
+        if isinstance(curr_pos, np.ndarray):
+            curr_pos = curr_pos[0]
+        elif curr_pos == None: # Default
+            curr_pos = self.robot_state
 
-    def get_observation(self, curr_pos):
         door = 0
         for door_loc in self.door_locations:
             door += 0.6*utils.gaussian(curr_pos, door_loc, 0.5)  # Doors
         left = (-np.tanh(5 * (curr_pos + 13)) + 1) / 2  # Left wall
         right = (np.tanh(5 * (curr_pos - 13)) + 1) / 2  # Right wall
-        return [door, left, right]
+        return (door, left, right)
 
-    def get_reward(self, curr_pos, open):
+    def get_observation_discrete(self, curr_pos=None):
+        if isinstance(curr_pos, np.ndarray):
+            curr_pos = curr_pos[0]
+        elif curr_pos == None: # Default
+            curr_pos = self.robot_state
+
+        return self.obs_space
+
+    def get_reward(self, curr_pos=None, open=None):
+        if curr_pos == None:
+            curr_pos = self.robot_state
+        if open == None:
+            open = self.open_action
+
         res = 0
         if open:
             target_loc = self.door_locations[self.goal_door]
@@ -66,15 +82,19 @@ class RobotDoorsExperiment(Model):
         return self.robot_state
 
     def take_action(self, action):
+        if isinstance(action, str):
+            i_action = self.action_space.index(action)
+        i_state = np.where(state_space == self.robot_state)[0]
+
         # If the robot tries to open door, check for it in reward function
-        if action == 0:
-            open = True
+        if i_action == 1:
+            self.open_action = True
         else:
-            open = False
+            self.open_action = False
 
         # Take the action, return
-        curr_state = self.robot_state
-        next_state = np.clip(curr_state + action, -15, 15)
+        i_next = np.clip(i_state + i_action - 1, 0, self.state_space.size - 1)
+        next_state = self.state_space[i_next]
         return next_state
 
     def is_terminal(self, state):
@@ -97,8 +117,25 @@ class RobotDoorsExperiment(Model):
         plt.plot(x_values, reward_values)
         plt.show()
 
-
 if __name__ == "__main__":
-    exp = RobotDoorsExperiment()
-    exp.plot_signals()
+    experiment = RobotDoorsExperiment()
+    planner = pomcp.POMCP(experiment.generate_step_oracle, timeout=10)
+
+    state_space = np.linspace(-15, 15, 300)
+    action_space = ["left", "open", "right"]
+    obs_space = [experiment.get_observation(x) for x in state_space]
+
+    planner.initialize(state_space, action_space, obs_space)
+
+    for i in range(10):
+        action = planner.Search()
+        print(planner.tree.nodes[-1][:4])
+        print(action)
+        experiment.take_action(action)
+        observation = experiment.get_observation()
+        i_action = action_space.index(action)
+        i_observation = obs_space.index(observation)
+        planner.tree.prune_after_action(i_action, i_observation)
+        planner.UpdateBelief(action, observation)
+
 
