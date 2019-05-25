@@ -90,6 +90,8 @@ class RobotDoorsExperiment():
     def take_action(self, action):
         if isinstance(action, str):
             i_action = self.action_space.index(action)
+        else:
+            i_action = action
         i_state = self.state_space.index(self.robot_state)
 
         # If the robot tries to open door, check for it in reward function
@@ -101,6 +103,7 @@ class RobotDoorsExperiment():
         # Take the action, return
         i_next = np.clip(i_state + i_action - 1, 0, len(self.state_space)-1)
         next_state = self.state_space[i_next]
+        self.robot_state = next_state
         return next_state
 
     def is_terminal(self, state):
@@ -125,13 +128,13 @@ class RobotDoorsExperiment():
 
 if __name__ == "__main__":
     experiment = RobotDoorsExperiment()
-    planner = pomcp.POMCP(experiment.generate_step_oracle, timeout=10)
+    planner = pomcp.POMCP(experiment.generate_step_oracle, timeout=100)
 
     planner.initialize(experiment.state_space, experiment.action_space, experiment.obs_space)
 
-    for i in range(10):
+    for i in range(100):
         action = planner.Search()
-        print(planner.tree.nodes[-1][:4])
+        print(planner.tree.nodes[-1][:])
         print(action)
         experiment.take_action(action)
         observation = experiment.get_observation_discrete()
