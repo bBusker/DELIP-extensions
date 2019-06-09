@@ -18,6 +18,31 @@ def generate_data(steps):
         trajectory.append(res)
     return trajectory
 
+def log_normal_pdf(sample, mean, logvar, raxis=1):
+  log2pi = tf.log(2. * np.pi)
+  return tf.reduce_sum(
+      -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
+      axis=raxis)
+
+def compute_loss(model, x):
+  mean, logvar = model.encode(x)
+  z = model.reparameterize(mean, logvar)
+  x_logit = model.decode(z)
+
+  cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x_logit, labels=x)
+  logpx_z = -tf.reduce_sum(cross_ent, axis=[1, 2, 3])
+  logpz = log_normal_pdf(z, 0., 0.)
+  logqz_x = log_normal_pdf(z, mean, logvar)
+  return -tf.reduce_mean(logpx_z + logpz - logqz_x)
+
+def compute_gradients(model, x):
+  with tf.GradientTape() as tape:
+    loss = compute_loss(model, x)
+  return tape.gradient(loss, model.trainable_variables), loss
+
+optimizer = tf.train.AdamOptimizer(1e-4)
+def apply_gradients(optimizer, gradients, variables, global_step=None):
+  optimizer.apply_gradients(zip(gradients, variables), global_step=global_step)
 
 class DELIP_model(tf.keras.Model):
     def __init__(self, _latent_dim):
@@ -25,30 +50,34 @@ class DELIP_model(tf.keras.Model):
         self.latent_dim = _latent_dim
         self.posterior_model = tf.keras.Sequential(
             [
-                tf.keras.layers.LSTM(units=self.latent_dim, input_shape=(2,5))
+                tf.keras.layers.LSTM(units=self.latent_dim*2, input_shape=(2,5))
             ]
         )
 
-        self.generative_net = tf.keras.Sequential(
+        self.state_generator = tf.keras.Sequential(
+            [
+                tf.keras.layers.InputLayer(input_shape=(self.latent_dim+1,)),
+                tf.keras.layers.Dense(units=1, activation='linear')
+            ]
+        )
+
+        self.observations_generator = tf.keras.Sequential(
             [
                 tf.keras.layers.InputLayer(input_shape=(self.latent_dim,)),
-                tf.keras.layers.Dense(units=7 * 7 * 32, activation=tf.nn.relu),
-                tf.keras.layers.Reshape(target_shape=(7, 7, 32)),
-                tf.keras.layers.Conv2DTranspose(
-                    filters=64,
-                    kernel_size=3,
-                    strides=(2, 2),
-                    padding="SAME",
-                    activation=tf.nn.relu),
-                tf.keras.layers.Conv2DTranspose(
-                    filters=32,
-                    kernel_size=3,
-                    strides=(2, 2),
-                    padding="SAME",
-                    activation=tf.nn.relu),
-                # No activation
-                tf.keras.layers.Conv2DTranspose(
-                    filters=1, kernel_size=3, strides=(1, 1), padding="SAME"),
+                tf.layers.Dense(units=100, activation='relu'),
+                tf.layers.Dense(units=100, activation='relu'),
+                tf.layers.Dense(units=100, activation='relu'),
+                tf.layers.Dense(units=6, activation='relu'),
+            ]
+        )
+
+        self.rewards_generator = tf.keras.Sequential(
+            [
+                tf.keras.layers.InputLayer(input_shape=(self.latent_dim,)),
+                tf.layers.Dense(units=100, activation='relu'),
+                tf.layers.Dense(units=100, activation='relu'),
+                tf.layers.Dense(units=100, activation='relu'),
+                tf.layers.Dense(units=2, activation='relu'),
             ]
         )
 
@@ -82,3 +111,7 @@ if __name__ == "__main__":
     print(data)
     model = DELIP_model(10)
     print(model.posterior_model.summary())
+    print(model.state_generator.summary())
+    print(model.observations_generator.summary())
+    print(model.rewards_generator.summary())
+    res = model.
