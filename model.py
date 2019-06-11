@@ -8,15 +8,21 @@ import robot_doors_experiment as exp
 tf.enable_eager_execution()
 tfe = tf.contrib.eager
 
-def generate_data(steps=10):
-    experiment = exp.RobotDoorsExperiment()
-    trajectory = []
-    for i in range(steps):
-        curr_action = np.random.choice([0,1,2])
-        experiment.take_action(curr_action)
-        res = experiment.get_observation_discrete() + (experiment.get_reward(),) + (curr_action,)
-        trajectory.append(res)
-    return trajectory
+def generate_data(steps=10, episodes=10):
+    data = []
+    for i in range(episodes):
+        experiment = exp.RobotDoorsExperiment()
+        trajectory = []
+        for j in range(steps):
+            curr_action = np.random.choice([0,1,2])
+            experiment.take_action(curr_action)
+            # TODO(slu): maybe need to standardize to discrete observations in generator for POMCP
+            res = experiment.get_observation_discrete() + (experiment.get_reward(),) + (curr_action,)
+            trajectory.append(res)
+        data.append(trajectory)
+    data = tf.constant(data, dtype=tf.float32)
+    dataset = tf.data.Dataset.from_tensor_slices(data)
+    return dataset
 
 def log_normal_pdf(sample, mean, logvar, raxis=1):
   log2pi = tf.log(2. * np.pi)
@@ -34,6 +40,9 @@ def compute_loss(model, x):
   logpz = log_normal_pdf(z, 0., 0.)
   logqz_x = log_normal_pdf(z, mean, logvar)
   return -tf.reduce_mean(logpx_z + logpz - logqz_x)
+
+def compute_loss_combined(model, x, next_state):
+    pass
 
 def compute_gradients(model, x):
   with tf.GradientTape() as tape:
@@ -53,17 +62,18 @@ class DELIP_model(tf.keras.Model):
         # Inputs: observation and previous state, Outputs: current state as variational posterior (mean and var)
         observation = tf.keras.Input(shape=(1,5), name='observation')
         prev_state = tf.keras.Input(shape=(1,), name='prev_state')
-        latent_state = tf.keras.layers.Bidirectional( # TODO(slu): check bidirectional functionality
-            tf.keras.layers.LSTM(units=10, input_shape=(1,5)), name='latent_state'
-        )(observation)
+        # latent_state = tf.keras.layers.Bidirectional( # TODO(slu): check bidirectional functionality, bidirectional or single direction and add s_t-1?
+        #     tf.keras.layers.LSTM(units=10, input_shape=(1,5)), name='latent_state'
+        # )(observation)
+        latent_state = tf.keras.layers.LSTM(units=10, input_shape=(1, 5), name = 'latent_state')(observation)
         latent_prev_states = tf.keras.layers.concatenate([latent_state, prev_state])
         curr_state = tf.keras.layers.Dense(units=self.latent_dim*2, activation='relu', name='curr_state')(latent_prev_states)
         self.posterior_model = tf.keras.Model(inputs=[observation, prev_state], outputs=curr_state)
 
-        self.state_model = tf.keras.Sequential(
+        self.next_state_model = tf.keras.Sequential(
             [
                 tf.keras.layers.InputLayer(input_shape=(self.latent_dim,)),
-                tf.keras.layers.Dense(units=1, activation='linear')
+                tf.keras.layers.Dense(units=self.latent_dim, activation='linear')
             ]
         )
 
@@ -102,13 +112,13 @@ class DELIP_model(tf.keras.Model):
 
     # For robot experiment, generate all 3 inference networks at once
     def generate(self, z, apply_sigmoid=False):
-        state_logits = self.state_model(z)
+        state_logits = self.next_state_model(z)
         observations_logits = self.observations_model(z)
         rewards_logits = self.rewards_model(z)
 
         if apply_sigmoid:
             state_probs = tf.sigmoid(state_logits)
-            observation_probs = tf.sigmoid(observations_logits)
+            observation_probs = tf.sigmoid(observations_logits)  # TODO(slu): need discrete observations?
             reward_probs = tf.sigmoid(rewards_logits)
             return state_probs, observation_probs, reward_probs
 
@@ -118,7 +128,7 @@ class DELIP_model(tf.keras.Model):
 if __name__ == "__main__":
     print("Using Tensorflow Version: {}".format(tf.VERSION))
     print("Using Keras Version: {}".format(tf.keras.__version__))
-    data = generate_data(1)
+    dataset = generate_data(10)
     model = DELIP_model(latent_dim=4)
     print(model.posterior_model.summary())
     # print(model.state_generator.summary())
@@ -126,7 +136,9 @@ if __name__ == "__main__":
     # print(model.rewards_generator.summary())
 
     # TODO(slu): Dummy data, remove later
-    data_tensor = tf.constant(data[0], dtype=tf.float32)
+    dataset_it = dataset.make_one_shot_iterator()
+    temp = dataset_it.get_next()
+    data_tensor = dataset_it.get_next()[0,]
     data_tensor = tf.reshape(data_tensor, (1,1,5))
     state_tensor = tf.constant([[1]], dtype=tf.float32)
 

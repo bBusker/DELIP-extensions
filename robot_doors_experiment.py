@@ -18,10 +18,9 @@ class RobotDoorsExperiment():
         self.robot_state = self.state_space[np.searchsorted(self.state_space, self.initial_robot_state)]
         self.open_action = False
 
+    # Takes in state and action values
+    # Returns value of next_state, observation, and reward
     def generate_step_oracle(self, state, action):
-        # Takes in state and action values
-        # Returns value of next_state, observation, and reward
-
         i_action = self.action_space.index(action)
         i_state = self.state_space.index(state)
 
@@ -31,20 +30,18 @@ class RobotDoorsExperiment():
         reward = self.get_reward(next_state, action == 1)
         return next_state, observation, reward
 
+    # Takes in state and action values
+    # Returns value of next_state, observation, and reward
     def generate_step_vi(self, state, action):
-        # Takes in state and action values
-        # Returns value of next_state, observation, and reward
-
-        observation = self.get_observation(self.robot_state)
+        observation = self.get_observation_discrete(self.robot_state)
         reward = self.get_reward(self.robot_state, open)
         next_state = self.take_action(action)
         is_terminal = self.is_terminal
         return next_state, observation, reward
 
+    # Takes in position of robot
+    # Returns calculated observation
     def get_observation_continuous(self, curr_pos=None):
-        # Takes in position of robot
-        # Returns calculated observation
-
         if isinstance(curr_pos, np.ndarray):
             curr_pos = curr_pos[0]
         elif curr_pos == None: # Default to state of current instance
@@ -57,10 +54,9 @@ class RobotDoorsExperiment():
         right = (np.tanh(5 * (curr_pos - 13)) + 1) / 2  # Right wall
         return (door, left, right)
 
+    # Takes in position of robot
+    # Returns closest observation from obs_space
     def get_observation_discrete(self, curr_pos=None):
-        # Takes in position of robot
-        # Returns closest observation from obs_space
-
         if isinstance(curr_pos, np.ndarray):
             curr_pos = curr_pos[0]
         elif curr_pos == None: # Default
@@ -112,9 +108,9 @@ class RobotDoorsExperiment():
 
     def plot_signals(self):
         x_values = np.linspace(-15, 15, 300)
-        door_values = [self.get_observation(x)[0] for x in x_values]
-        left_values = [self.get_observation(x)[1] for x in x_values]
-        right_values = [self.get_observation(x)[2] for x in x_values]
+        door_values = [self.get_observation_continuous(x)[0] for x in x_values]
+        left_values = [self.get_observation_continuous(x)[1] for x in x_values]
+        right_values = [self.get_observation_continuous(x)[2] for x in x_values]
         plt.plot(x_values, door_values)
         plt.plot(x_values, left_values)
         plt.plot(x_values, right_values)

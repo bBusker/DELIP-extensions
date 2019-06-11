@@ -8,7 +8,7 @@ import multiprocessing
 # POMCP solver
 class POMCP():
     # gamma = discount rate
-    # c = higher value to encourage UCB exploration
+    # c = higher value -> encourage UCB exploration
     # threshold = threshold below which discount is too little
     # timeout = number of runs from node
     def __init__(self, generator, gamma=0.95, c=1, threshold=0.005, timeout=10000, no_particles=1200):
