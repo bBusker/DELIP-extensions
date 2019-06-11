@@ -140,7 +140,7 @@ class POMCP():
         self.tree.nodes[next_node][3] += (cum_reward - self.tree.nodes[next_node][3]) / self.tree.nodes[next_node][2]
         return cum_reward
 
-    # FIXFIXFIX
+    # slu(5/24/2019): Fixed recursive calls
     # Samples from posterior after action and observation
     def PosteriorSample(self, Bh, action, observation):
         if Bh == []:
