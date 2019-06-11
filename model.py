@@ -5,20 +5,23 @@ import tensorflow_probability as tfp
 from tensorflow.python.keras import layers
 from tensorflow.python.keras import models
 import robot_doors_experiment as exp
+import time
 
 tf.enable_eager_execution()
 tfe = tf.contrib.eager
 tfd = tfp.distributions
 
+
 class DELIP_model(tf.keras.Model):
     def __init__(self, latent_dim=4): # Eliminate magic numbers
         super(DELIP_model, self).__init__()
         self.latent_dim = latent_dim
+        self.last_latent_state = None
 
         # Use functional interface to define posterior model.
         # Inputs: observation and previous state, Outputs: current state as variational posterior (mean and var)
         observation = tf.keras.Input(shape=(1,5), name='observation')
-        prev_state = tf.keras.Input(shape=(1,), name='prev_state')  # TODO(slu): placeholder, need to update to latent dim size
+        prev_state = tf.keras.Input(shape=(self.latent_dim,), name='prev_state')
         # latent_state = tf.keras.layers.Bidirectional( # TODO(slu): check bidirectional functionality, bidirectional or single direction and add s_t-1?
         #     tf.keras.layers.LSTM(units=10, input_shape=(1,5)), name='latent_state'
         # )(observation)
@@ -61,7 +64,8 @@ class DELIP_model(tf.keras.Model):
         return self.generate(eps, apply_sigmoid=True)
 
     def infer(self, x):
-        mean, logvar = tf.split(self.posterior_model(x), num_or_size_splits=2, axis=1)
+        self.last_latent_state = self.posterior_model(x)
+        mean, logvar = tf.split(self.last_latent_state, num_or_size_splits=2, axis=1)
         return mean, logvar
 
     def reparameterize(self, mean, logvar):
@@ -84,6 +88,7 @@ class DELIP_model(tf.keras.Model):
         rewards_mean, rewards_logvar = tf.split(rewards_logits, num_or_size_splits=2, axis=1)
         return rewards_mean, rewards_logvar
 
+
 def generate_dataset(steps=10, episodes=10):
     data = []
     for i in range(episodes):
@@ -100,11 +105,13 @@ def generate_dataset(steps=10, episodes=10):
     dataset = tf.data.Dataset.from_tensor_slices(data)
     return dataset
 
+
 def log_normal_pdf(sample, mean, logvar, raxis=1):
     log2pi = tf.log(2. * np.pi)
     return tf.reduce_sum(
       -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
       axis=raxis)
+
 
 def compute_loss(model, x):
     mean, logvar = model.infer(x)
@@ -116,6 +123,7 @@ def compute_loss(model, x):
     logpz = log_normal_pdf(z, 0., 0.)
     logqz_x = log_normal_pdf(z, mean, logvar)
     return -tf.reduce_mean(logpx_z + logpz - logqz_x)
+
 
 def compute_loss_combined(model, x, prev_state):
     prior = tfd.Normal(loc=tf.zeros(model.latent_dim), scale=tf.ones(model.latent_dim))
@@ -138,19 +146,43 @@ def compute_loss_combined(model, x, prev_state):
     return tf.reduce_mean(state_loss) + tf.reduce_mean(observations_loss) + tf.reduce_mean(rewards_loss) - tf.reduce_mean(kl_divergence)  # TODO(slu): reduce_mean or indiviually?
 
 
-def compute_gradients(model, x):
+def compute_gradients(model, x, prev_state):
     with tf.GradientTape() as tape:
-        loss = compute_loss(model, x)
+        loss = compute_loss_combined(model, x, prev_state)
     return tape.gradient(loss, model.trainable_variables), loss
 
-optimizer = tf.train.AdamOptimizer(1e-4)
-def apply_gradients(optimizer, gradients, variables, global_step=None):
-    optimizer.apply_gradients(zip(gradients, variables), global_step=global_step)
+
+def training():
+    model = DELIP_model(latent_dim=4)
+    optimizer = tf.train.AdamOptimizer(1e-4)
+    train_dataset = generate_dataset(steps=10, episodes=10)
+    test_dataset = generate_dataset(steps=10, episodes=10)
+    epochs = 100
+
+    prev_state = [[0]*model.latent_dim]
+
+    for epoch in range(1, epochs + 1):
+        start_time = time.time()
+        for train_x in train_dataset:
+            gradients, loss = compute_gradients(model, train_x, prev_state)
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables), global_step=None)
+            prev_state = model.last_latent_state
+        end_time = time.time()
+
+        if epoch % 1 == 0:
+            loss = tfe.metrics.Mean()
+            for test_x in test_dataset:
+                loss(compute_loss(model, test_x))
+            elbo = -loss.result()
+            print('Epoch: {}, Test set ELBO: {}, '
+                  'time elapse for current epoch {}'.format(epoch,
+                                                            elbo,
+                                                            end_time - start_time))
+
+    return model
 
 
-if __name__ == "__main__":
-    print("Using Tensorflow Version: {}".format(tf.VERSION))
-    print("Using Keras Version: {}".format(tf.keras.__version__))
+def testing():
     dataset = generate_dataset(10)
     model = DELIP_model(latent_dim=4)
     print(model.posterior_model.summary())
@@ -162,7 +194,7 @@ if __name__ == "__main__":
     dataset_it = dataset.make_one_shot_iterator()
     temp = dataset_it.get_next()
     data_tensor = dataset_it.get_next()[0,]
-    data_tensor = tf.reshape(data_tensor, (1,1,5))
+    data_tensor = tf.reshape(data_tensor, (1, 1, 5))
     state_tensor = tf.constant([[1]], dtype=tf.float32)
 
     gaussians = model.infer([data_tensor, state_tensor])
@@ -176,5 +208,11 @@ if __name__ == "__main__":
 
     print(compute_loss_combined(model, data_tensor, state_tensor))
     print("Done")
+
+
+if __name__ == "__main__":
+    print("Using Tensorflow Version: {}".format(tf.VERSION))
+    print("Using Keras Version: {}".format(tf.keras.__version__))
+    testing()
 
 
