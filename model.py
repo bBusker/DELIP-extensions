@@ -8,8 +8,8 @@ from tensorflow.python.keras.layers import Bidirectional, Dense, Lambda, LSTM, T
 import robot_doors_experiment as exp
 import time
 
-tf.enable_eager_execution()
-tfe = tf.contrib.eager
+# tf.enable_eager_execution()
+# tfe = tf.contrib.eager
 tfd = tfp.distributions
 
 def create_qRNN_model(latent_dim, input_timesteps):
@@ -57,27 +57,28 @@ class DELIP_model(Model):
         # Create NN Graph
         timestep_data = Input(shape=(self.input_timesteps, 5), name='timestep_data')
         rnn_state = Bidirectional(LSTM(units=10, input_shape=(self.input_timesteps, 5), return_sequences=True),name='rnn_state')(timestep_data)
-        latent_state = TimeDistributed(Dense(units=self.latent_dim*2, activation='softplus', bias_initializer=K.initializers.zeros, kernel_initializer=K.initializers.zeros),name='latent_state')(rnn_state)
+        latent_state = TimeDistributed(Dense(units=self.latent_dim*2, activation='softplus', bias_initializer=K.initializers.zeros(), kernel_initializer=K.initializers.zeros()),name='latent_state')(rnn_state)
         latent_sample = TimeDistributed(Lambda(self.reparameterize_layer, output_shape=(self.latent_dim,)),name='latent_sample')(latent_state)
 
         decoder_in = K.layers.Input(shape=(self.input_timesteps, self.latent_dim,), name='latent_sample_in')
-        observations = TimeDistributed(Dense(units=100, activation='relu'),name='obs1')(decoder_in)
+        observations = TimeDistributed(Dense(units=100, activation='relu'),name='obs1')(latent_sample)#(decoder_in)
         observations = TimeDistributed(Dense(units=100, activation='relu'),name='obs2')(observations)
         observations = TimeDistributed(Dense(units=100, activation='relu'),name='obs3')(observations)
         observations = TimeDistributed(Dense(units=3 * 2, activation='softplus'),name='obs_out')(observations)
 
-        rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew1')(decoder_in)
+        rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew1')(latent_sample)#(decoder_in)
         rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew2')(rewards)
         rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew3')(rewards)
         rewards = TimeDistributed(Dense(units=1 * 2, activation='sigmoid'),name='rew_out')(rewards)
 
         # Create Posterior and Decoder Models
-        self.posterior_model = Model(inputs=timestep_data, outputs=latent_sample, name='encoder')
-        self.decoder_model = Model(inputs=decoder_in, outputs=[observations, rewards], name='decoder')
+        #self.posterior_model = Model(inputs=timestep_data, outputs=latent_sample, name='encoder')
+        #self.decoder_model = Model(inputs=decoder_in, outputs=[observations, rewards], name='decoder')
 
         # Create VAE Model
-        vae = self.decoder_model(self.posterior_model(timestep_data))
-        self.vae_model = Model(inputs=timestep_data, outputs=vae+[latent_state])
+        #vae = self.decoder_model(self.posterior_model(timestep_data))
+        #self.vae_model = Model(inputs=timestep_data, outputs=vae+[latent_state])
+        self.vae_model = Model(inputs=timestep_data, outputs=[observations, rewards, latent_state])
 
         # # Declare Generator Layers
         # observations0 = TimeDistributed(Dense(units=100, activation='relu'), name='obs0')
@@ -173,6 +174,11 @@ def log_normal_pdf(sample, mean, logvar, raxis=1):
     return tf.reduce_sum(
       -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
       axis=raxis)
+
+def sd_sampling(input):
+    mean, sd = tf.split(input, num_or_size_splits=2, axis=1)
+    eps = tf.random_normal(shape=tf.shape(mean))
+    return eps * sd + mean
 
 
 def compute_loss(model, x):
@@ -285,20 +291,44 @@ def training():
 
 def training2():
     trajectory_timesteps = 100
-    total_batch_size = 500
+    total_batch_size = 2000
+    batch_size = 100
     epochs = 10000
     adam_lr = 1e-4
 
     model = DELIP_model(latent_dim=4, input_timesteps=trajectory_timesteps)
+    train_data = generate_dataset(steps=trajectory_timesteps, episodes=total_batch_size, return_data=True)
+    checkpointer = K.callbacks.ModelCheckpoint(filepath='./trained_models/DELIP_vae-{epoch:02d}-{loss:.2f}.hdf5',
+                                               verbose=1,
+                                               save_weights_only=True,
+                                               period=10)
+
     model.vae_model.compile(optimizer='adam',
                             loss=[custom_loss_obs, custom_loss_rew, custom_loss_latent],
                             loss_weights=[1,1,1])
-    train_data = generate_dataset(steps=trajectory_timesteps, episodes=total_batch_size, return_data=True)
-
     model.vae_model.fit(x=train_data,
                         y=[train_data[:,:,0:3], train_data[:,:,3:4], train_data[:,:,:-1]],
-                        batch_size=100,
-                        steps_per_epoch=epochs)
+                        steps_per_epoch=total_batch_size//batch_size,
+                        batch_size=batch_size,
+                        epochs=epochs,
+                        callbacks=[checkpointer])
+    model.vae_model.save("trained_model_vae.h5", include_optimizer=False)
+
+
+def test_model(filepath="trained_model.h5"):
+    timesteps = 100
+    model = DELIP_model(latent_dim=4, input_timesteps=None)
+    model.vae_model.load_weights(filepath, by_name=True)
+    test_dataset = generate_dataset(steps=timesteps, episodes=10)
+    for trajectory in test_dataset.batch(1):
+        observations, rewards, latents = model.vae_model(trajectory)
+        observations_sample = sd_sampling(tf.reshape(observations,(timesteps,6)))
+        rewards_sample = sd_sampling(tf.reshape(rewards,(timesteps,2)))
+        for i in range(100):
+            print("model: {}".format(observations_sample[i]))
+            print("actual: {}".format(trajectory[0][i][0:3]))
+        print("done")
+    print("hello")
 
 
 def testing():
@@ -327,6 +357,7 @@ if __name__ == "__main__":
     print("Using Keras Version: {}".format(K.__version__))
     print(tf.test.gpu_device_name())
     print(tf.test.is_gpu_available())
+    #test_model("trained_model_vae.h5")
     training2()
 
 
