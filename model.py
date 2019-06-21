@@ -12,39 +12,6 @@ import time
 # tfe = tf.contrib.eager
 tfd = tfp.distributions
 
-def create_qRNN_model(latent_dim, input_timesteps):
-    # Use functional interface to define posterior model.
-    # Inputs: observation and previous state, Outputs: current state as variational posterior (mean and var)
-    observation = Input(shape=(input_timesteps, 5), name='observation')
-    prev_state = Input(shape=(latent_dim,), name='prev_state')
-    latent_state = LSTM(units=10, input_shape=(input_timesteps, 5), name = 'latent_state')(observation)
-    latent_prev_states = K.layers.concatenate([latent_state, prev_state])
-    curr_state = Dense(units=latent_dim * 2, activation='softplus', name='curr_state')(
-        latent_prev_states)
-    posterior_model = Model(inputs=[observation, prev_state], outputs=curr_state)
-    return posterior_model
-
-def create_qBRNN_model(latent_dim, input_timesteps):
-    # Use functional interface to define posterior model.
-    # Inputs: observation and previous state, Outputs: current state as variational posterior (mean and var)
-    observation = Input(shape=(input_timesteps, 5), name='observation')
-    rnn_state = Bidirectional(
-        LSTM(units=10, input_shape=(input_timesteps, 5)), name='rnn_state'
-    )(observation)
-    latent_state = Dense(units=latent_dim * 2, activation='softplus', name='latent_state')(rnn_state)
-    latent_sample = K.layers.Lambda(reparameterize, output_shape=(latent_dim,), name='latent_sample')(latent_state)
-    observations = Dense(units=100, activation='relu', name='obs1')(latent_sample)
-    tf.layers.Dense(units=100, activation='relu'),
-    tf.layers.Dense(units=100, activation='relu'),
-    tf.layers.Dense(units=100, activation='relu'),
-    tf.layers.Dense(units=3 * 2, activation='softplus'),
-
-
-    posterior_model = Model(inputs=observation, outputs=curr_state)
-    decoder_model = Model(inputs=latent_state, outputs=[observations, rewards])
-    return posterior_model
-
-
 class DELIP_model(Model):
     def __init__(self, latent_dim, input_timesteps): # TODO(slu): Eliminate magic numbers
         super(DELIP_model, self).__init__()
@@ -61,72 +28,31 @@ class DELIP_model(Model):
         latent_sample = TimeDistributed(Lambda(self.reparameterize_layer, output_shape=(self.latent_dim,)),name='latent_sample')(latent_state)
 
         decoder_in = K.layers.Input(shape=(self.input_timesteps, self.latent_dim,), name='latent_sample_in')
-        observations = TimeDistributed(Dense(units=100, activation='relu'),name='obs1')(latent_sample)#(decoder_in)
+        observations = TimeDistributed(Dense(units=100, activation='relu'),name='obs1')(decoder_in)
         observations = TimeDistributed(Dense(units=100, activation='relu'),name='obs2')(observations)
         observations = TimeDistributed(Dense(units=100, activation='relu'),name='obs3')(observations)
         observations = TimeDistributed(Dense(units=3 * 2, activation='softplus'),name='obs_out')(observations)
 
-        rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew1')(latent_sample)#(decoder_in)
+        rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew1')(decoder_in)
         rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew2')(rewards)
         rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew3')(rewards)
         rewards = TimeDistributed(Dense(units=1 * 2, activation='sigmoid'),name='rew_out')(rewards)
 
         # Create Posterior and Decoder Models
-        #self.posterior_model = Model(inputs=timestep_data, outputs=latent_sample, name='encoder')
-        #self.decoder_model = Model(inputs=decoder_in, outputs=[observations, rewards], name='decoder')
+        self.posterior_model = Model(inputs=timestep_data, outputs=latent_sample, name='encoder')
+        self.decoder_model = Model(inputs=decoder_in, outputs=[observations, rewards], name='decoder')
 
         # Create VAE Model
-        #vae = self.decoder_model(self.posterior_model(timestep_data))
-        #self.vae_model = Model(inputs=timestep_data, outputs=vae+[latent_state])
-        self.vae_model = Model(inputs=timestep_data, outputs=[observations, rewards, latent_state])
+        vae = self.decoder_model(self.posterior_model(timestep_data))
+        self.vae_model = Model(inputs=timestep_data, outputs=vae+[latent_state])
 
-        # # Declare Generator Layers
-        # observations0 = TimeDistributed(Dense(units=100, activation='relu'), name='obs0')
-        # observations1 = TimeDistributed(Dense(units=100, activation='relu'), name='obs1')
-        # observations2 = TimeDistributed(Dense(units=100, activation='relu'), name='obs2')
-        # observations_out = TimeDistributed(Dense(units=3*2, activation='softplus'), name='obs_out')
-        # 
-        # rewards0 = TimeDistributed(Dense(units=100, activation='relu'), name='rew0')
-        # rewards1 = TimeDistributed(Dense(units=100, activation='relu'), name='rew1')
-        # rewards2 = TimeDistributed(Dense(units=100, activation='relu'), name='rew2')
-        # rewards_out = TimeDistributed(Dense(units=1*2, activation='sigmoid'), name='rew_out')
-        # 
-        # # Create VAE Model
-        # observations_vae = observations0(latent_sample)
-        # observations_vae = observations1(observations_vae)
-        # observations_vae = observations2(observations_vae)
-        # observations_vae = observations_out(observations_vae)
-        # rewards_vae = rewards0(latent_sample)
-        # rewards_vae = rewards1(rewards_vae)
-        # rewards_vae = rewards2(rewards_vae)
-        # rewards_vae = rewards_out(rewards_vae)
-        # self.vae_model = Model(inputs=timestep_data, outputs=[observations_vae, rewards_vae, latent_state], name='vae')
-        # 
-        # # Create Decoder Model
-        # decoder_in = K.layers.Input(shape=(self.input_timesteps, self.latent_dim,), name='latent_sample_in')
-        # observations_dec = observations0(decoder_in)
-        # observations_dec = observations1(observations_dec)
-        # observations_dec = observations2(observations_dec)
-        # observations_dec = observations_out(observations_dec)
-        # rewards_dec = rewards0(decoder_in)
-        # rewards_dec = rewards1(rewards_dec)
-        # rewards_dec = rewards2(rewards_dec)
-        # rewards_dec = rewards_out(rewards_dec)
-        # self.decoder_model = Model(inputs=decoder_in, outputs=[observations_dec, rewards_dec], name='decoder')
-
-    def sample(self, eps=None):
-        if eps is None:
-            eps = tf.random_normal(shape=(100, self.latent_dim))
-        return self.generate(eps, apply_sigmoid=True)
-
-    def infer(self, x):
-        self.last_latent_state = self.posterior_model(x)
-        mean, logvar = tf.split(self.last_latent_state, num_or_size_splits=2, axis=1)
-        return mean, logvar
-
-    def reparameterize(self, mean, logvar):
-        eps = tf.random_normal(shape=mean.shape)
+    def reparameterize_w_logvar(self, mean, logvar):
+        eps = tf.random_normal(shape=tf.shape(mean))
         return eps * tf.exp(logvar * .5) + mean
+
+    def reparameterize_w_sd(self, mean, sd):
+        eps = tf.random_normal(shape=tf.shape(mean))
+        return eps * sd + mean
 
     def reparameterize_layer(self, input):
         mean, logvar = tf.split(input, num_or_size_splits=2, axis=1)
@@ -169,28 +95,11 @@ def generate_dataset(steps=10, episodes=10, return_data=False):
     return dataset
 
 
-def log_normal_pdf(sample, mean, logvar, raxis=1):
-    log2pi = tf.log(2. * np.pi)
-    return tf.reduce_sum(
-      -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
-      axis=raxis)
-
 def sd_sampling(input):
     mean, sd = tf.split(input, num_or_size_splits=2, axis=1)
     eps = tf.random_normal(shape=tf.shape(mean))
     return eps * sd + mean
 
-
-def compute_loss(model, x):
-    mean, logvar = model.infer(x)
-    z = model.reparameterize(mean, logvar)
-    x_logit = model.generate(z)
-
-    cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x_logit, labels=x)
-    logpx_z = -tf.reduce_sum(cross_ent, axis=[1, 2, 3])
-    logpz = log_normal_pdf(z, 0., 0.)
-    logqz_x = log_normal_pdf(z, mean, logvar)
-    return -tf.reduce_mean(logpx_z + logpz - logqz_x)
 
 def compute_loss_combined(model, x):
     # TODO(slu): state loss
@@ -295,15 +204,19 @@ def training2():
     batch_size = 100
     epochs = 10000
     adam_lr = 1e-4
+    adam_b1 = 0.9
+    adam_b2 = 0.999
+    adam_epsilon = 1e-8
 
     model = DELIP_model(latent_dim=4, input_timesteps=trajectory_timesteps)
     train_data = generate_dataset(steps=trajectory_timesteps, episodes=total_batch_size, return_data=True)
+    adam_optimizer = K.optimizers.Adam(lr=adam_lr, beta_1=adam_b1, beta_2=adam_b2, epsilon=adam_epsilon)
     checkpointer = K.callbacks.ModelCheckpoint(filepath='./trained_models/DELIP_vae-{epoch:02d}-{loss:.2f}.hdf5',
                                                verbose=1,
                                                save_weights_only=True,
                                                period=10)
 
-    model.vae_model.compile(optimizer='adam',
+    model.vae_model.compile(optimizer=adam_optimizer,
                             loss=[custom_loss_obs, custom_loss_rew, custom_loss_latent],
                             loss_weights=[1,1,1])
     model.vae_model.fit(x=train_data,
