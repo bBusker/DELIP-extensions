@@ -7,9 +7,10 @@ from tensorflow.python.keras import Input, Model
 from tensorflow.python.keras.layers import Bidirectional, Dense, Lambda, LSTM, TimeDistributed
 import robot_doors_experiment as exp
 import time
+import random
 
-# tf.enable_eager_execution()
-# tfe = tf.contrib.eager
+#tf.enable_eager_execution()
+tfe = tf.contrib.eager
 tfd = tfp.distributions
 
 class DELIP_model(Model):
@@ -24,7 +25,7 @@ class DELIP_model(Model):
         # Create NN Graph
         timestep_data = Input(shape=(self.input_timesteps, 5), name='timestep_data')
         rnn_state = Bidirectional(LSTM(units=10, input_shape=(self.input_timesteps, 5), return_sequences=True),name='rnn_state')(timestep_data)
-        latent_state = TimeDistributed(Dense(units=self.latent_dim*2, activation='softplus', bias_initializer=K.initializers.zeros(), kernel_initializer=K.initializers.zeros()),name='latent_state')(rnn_state)
+        latent_state = TimeDistributed(Dense(units=self.latent_dim*2, activation='softplus', bias_initializer=K.initializers.zeros(), kernel_initializer=K.initializers.zeros(),  kernel_constraint=K.constraints.max_norm(0.5)), name='latent_state')(rnn_state)
         latent_sample = TimeDistributed(Lambda(self.reparameterize_layer, output_shape=(self.latent_dim,)),name='latent_sample')(latent_state)
 
         decoder_in = K.layers.Input(shape=(self.input_timesteps, self.latent_dim,), name='latent_sample_in')
@@ -88,12 +89,30 @@ def generate_dataset(steps=10, episodes=10, return_data=False):
             res = experiment.get_observation_discrete() + (experiment.get_reward(),) + (curr_action,)
             trajectory.append(res)
         data.append(trajectory)
-    data = tf.constant(data, dtype=tf.float32)
+    print("GENERATE_DATASET IS CURRENTLY MAKING NP ARRAYS LISTS FOR RETURN_DATA")
+    data = np.array(data, dtype=np.float32)
     dataset = tf.data.Dataset.from_tensor_slices(data)
     if return_data:
         return data
     return dataset
 
+
+def generate_batches(trajectories, batch_size):
+    # 5 Buckets
+    cum_rew_per_traj = np.sum(trajectories, axis=1)[:,3]
+    sorted_data = [trajectory for cum_rew, trajectory in sorted(zip(cum_rew_per_traj, trajectories), key=lambda x: x[0])]
+    buckets = []
+    for i in range(5):
+        buckets.append(sorted_data[len(sorted_data)//5*i:len(sorted_data)//5*(i+1)])
+
+    while True:
+        train_data = []
+        for i in range(batch_size//5):
+            for bucket in buckets:
+                train_data.append(random.choice(bucket))
+        train_data = np.stack(train_data)
+        target_data = [train_data[:, :, 0:3], train_data[:, :, 3:4], train_data[:, :, :-1]]
+        yield (train_data, target_data)
 
 def sd_sampling(input):
     mean, sd = tf.split(input, num_or_size_splits=2, axis=1)
@@ -203,7 +222,8 @@ def training2():
     total_batch_size = 2000
     batch_size = 100
     epochs = 10000
-    adam_lr = 1e-4
+
+    adam_lr = 1e-3
     adam_b1 = 0.9
     adam_b2 = 0.999
     adam_epsilon = 1e-8
@@ -211,20 +231,26 @@ def training2():
     model = DELIP_model(latent_dim=4, input_timesteps=trajectory_timesteps)
     train_data = generate_dataset(steps=trajectory_timesteps, episodes=total_batch_size, return_data=True)
     adam_optimizer = K.optimizers.Adam(lr=adam_lr, beta_1=adam_b1, beta_2=adam_b2, epsilon=adam_epsilon)
-    checkpointer = K.callbacks.ModelCheckpoint(filepath='./trained_models/DELIP_vae-{epoch:02d}-{loss:.2f}.hdf5',
+    checkpointer = K.callbacks.ModelCheckpoint(filepath='./trained_models/DELIP_vaemodel_ep:{epoch:02d}_loss:{loss:.2f}.hdf5',
                                                verbose=1,
                                                save_weights_only=True,
-                                               period=10)
+                                               period=5)
 
     model.vae_model.compile(optimizer=adam_optimizer,
                             loss=[custom_loss_obs, custom_loss_rew, custom_loss_latent],
                             loss_weights=[1,1,1])
-    model.vae_model.fit(x=train_data,
-                        y=[train_data[:,:,0:3], train_data[:,:,3:4], train_data[:,:,:-1]],
-                        steps_per_epoch=total_batch_size//batch_size,
-                        batch_size=batch_size,
-                        epochs=epochs,
-                        callbacks=[checkpointer])
+    # model.vae_model.fit(x=train_data,
+    #                     y=[train_data[:,:,0:3], train_data[:,:,3:4], train_data[:,:,:-1]],
+    #                     steps_per_epoch=total_batch_size//batch_size,
+    #                     batch_size=batch_size,
+    #                     epochs=epochs,
+    #                     callbacks=[checkpointer])
+
+    model.vae_model.fit_generator(generator=generate_batches(train_data, batch_size),
+                                  steps_per_epoch=total_batch_size // batch_size,
+                                  epochs=epochs,
+                                  callbacks=[checkpointer])
+
     model.vae_model.save("trained_model_vae.h5", include_optimizer=False)
 
 
@@ -245,31 +271,32 @@ def test_model(filepath="trained_model.h5"):
 
 
 def testing():
-    trajectory_timesteps = 1
-    total_batch_size = 1
+    print(tf.test.gpu_device_name())
+    print(tf.test.is_gpu_available())
+
+    trajectory_timesteps = 10
+    total_batch_size = 100
 
     model = DELIP_model(latent_dim=4, input_timesteps=trajectory_timesteps)
-    # print(model.vae_model.summary())
-    # K.utils.plot_model(model.vae_model, to_file='vae.png', show_shapes=True)
-    # print(model.posterior_model.summary())
-    # K.utils.plot_model(model.decoder_model, to_file='vae_encoder.png', show_shapes=True)
-    # print(model.decoder_model.summary())
-    # K.utils.plot_model(model.posterior_model, to_file='vae_decoder.png', show_shapes=True)
+    print(model.vae_model.summary())
+    K.utils.plot_model(model.vae_model, to_file='vae.png', show_shapes=True)
+    print(model.posterior_model.summary())
+    K.utils.plot_model(model.decoder_model, to_file='vae_encoder.png', show_shapes=True)
+    print(model.decoder_model.summary())
+    K.utils.plot_model(model.posterior_model, to_file='vae_decoder.png', show_shapes=True)
 
-    dataset = generate_dataset(steps=trajectory_timesteps, episodes=total_batch_size)
-    for item in dataset.batch(1):
-        res = model.posterior_model(item)
-        print(res)
-        res = model.vae_model(item)
-        print(res)
-        print(compute_loss_combined(model, item))
+    model.vae_model.load_weights("./trained_models/DELIP_vaemodel_ep:30_loss:-3.31.hdf5", by_name=True)
+    print("hello")
+
+    # dataset = generate_dataset(steps=trajectory_timesteps, episodes=total_batch_size, return_data=True)
+    # temp = generate_batches(dataset, batch_size=5)
+    # for item in temp:
+    #     print(item)
 
 
 if __name__ == "__main__":
     print("Using Tensorflow Version: {}".format(tf.VERSION))
     print("Using Keras Version: {}".format(K.__version__))
-    print(tf.test.gpu_device_name())
-    print(tf.test.is_gpu_available())
     #test_model("trained_model_vae.h5")
     training2()
 
