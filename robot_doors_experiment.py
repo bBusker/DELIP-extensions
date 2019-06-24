@@ -122,6 +122,20 @@ class RobotDoorsExperiment():
         plt.plot(x_values, reward_values)
         plt.show()
 
+def generate_data(steps=10, episodes=10):
+    data = []
+    for i in range(episodes):
+        experiment = RobotDoorsExperiment()
+        trajectory = []
+        for j in range(steps):
+            curr_action = np.random.choice([0,1,2])
+            experiment.take_action(curr_action)
+            # TODO(slu): standardize to discrete observations in generator for POMCP
+            res = experiment.get_observation_discrete() + (experiment.get_reward(),) + (curr_action,)
+            trajectory.append(res)
+        data.append(trajectory)
+    return data
+
 if __name__ == "__main__":
     experiment = RobotDoorsExperiment()
     planner = pomcp.POMCP(experiment.generate_step_oracle, timeout=100)
