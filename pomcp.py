@@ -72,9 +72,10 @@ class POMCP():
         # Repeat Simulations until timeout
         for _ in range(self.timeout):
             if Bh == []:
-                s = choice(self.states)
+                s = (0,0)
             else:
-                s = choice(Bh)
+                rand_index = np.random.randint(len(Bh))
+                s = Bh[rand_index]
             self.Simulate(s, -1, 0)
         # Get best action
         action, _ = self.SearchBest(-1, UseUCB=False)
@@ -144,9 +145,10 @@ class POMCP():
     # Samples from posterior after action and observation
     def PosteriorSample(self, Bh, action, observation):
         if Bh == []:
-            s = choice(self.states)
+            s = (0,0)#s = choice(self.states)
         else:
-            s = choice(Bh)
+            rand_index = np.random.randint(len(Bh))
+            s = Bh[rand_index]
         # Sample from transition distribution
         s_next, o_next, _ = self.Generator(s, action)
         if o_next == observation:

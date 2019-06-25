@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 import utils
 import pomcp
 import model
-
+import tensorflow as tf
 
 class RobotDoorsExperiment():
     def __init__(self):
@@ -13,7 +13,7 @@ class RobotDoorsExperiment():
 
         self.action_space = ["left", "open", "right"]
         self.state_space = np.linspace(-15, 15, 300).tolist()
-        self.obs_space = [self.get_observation_continuous(x) for x in self.state_space]
+        self.obs_space = [self.get_observation_discrete(x) for x in self.state_space]
 
         self.initial_robot_state = np.clip(np.random.normal(0, 5), -15, 15)
         self.robot_state = self.state_space[np.searchsorted(self.state_space, self.initial_robot_state)]
@@ -23,34 +23,35 @@ class RobotDoorsExperiment():
 
     # Load a DELIP model
     def load_model(self, filepath):
-        self.DELIP_model = model.DELIP_model(latent_dim=4, input_timesteps=None)
-        self.DELIP_model.vae_model.load_weights(filepath, by_name=True)
+        self.DELIP_model = model.DELIP_model(latent_dim=2, input_timesteps=None)
+        self.DELIP_model.decoder_model.load_weights(filepath, by_name=True)
 
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
     def generate_step_oracle(self, state, action):
-        i_action = self.action_space.index(action)
+        i_action = self.action_space.index(action)-1
         i_state = self.state_space.index(state)
 
-        i_next = np.clip(i_state+i_action-1, 0, len(self.state_space)-1)
+        i_next = np.clip(i_state+i_action, 0, len(self.state_space)-1)
         next_state = self.state_space[i_next]
         observation = self.get_observation_discrete(next_state)  # TODO: should this be observation indicies?
-        reward = self.get_reward(next_state, action == 1)
+        reward = self.get_reward(next_state, action == 0)
         return next_state, observation, reward
 
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
     def generate_step_DELIP(self, state, action):
         assert self.DELIP_model is not None
+        state = tf.reshape(tf.constant(state, dtype=tf.float32), (1,1,2))
+        action = tf.reshape(tf.constant(self.action_space.index(action)-1, dtype=tf.float32), (1,1,1))
+        observation, reward, next_state = self.DELIP_model.decoder_model([state, action])
 
-        observation, reward, next_state, latent_state, latent_sample = self.DELIP_model.decoder_model(state)
+        obs_sample = (tuple)(self.DELIP_model.reparameterize_layer(observation[0]).numpy().astype(np.float64).round(1).tolist()[0])
+        #rew_sample = (tuple)(self.DELIP_model.reparameterize_layer(reward[0]).numpy().astype(np.float64).round(1).tolist()[0])  # TODO(slu): do I need to round reward???
+        rew_sample = self.DELIP_model.reparameterize_layer(reward[0])[0][0].numpy()
+        ns_sample = (tuple)(self.DELIP_model.reparameterize_layer(next_state[0]).numpy().astype(np.float64).round(1).tolist()[0])
 
-
-        observation = self.get_observation_discrete(self.robot_state)
-        reward = self.get_reward(self.robot_state, open)
-        next_state = self.take_action(action)
-        is_terminal = self.is_terminal
-        return next_state, observation, reward
+        return ns_sample, obs_sample, rew_sample
 
     # Takes in position of robot
     # Returns calculated observation
@@ -67,9 +68,13 @@ class RobotDoorsExperiment():
         right = (np.tanh(5 * (curr_pos - 13)) + 1) / 2  # Right wall
         return (door, left, right)
 
+    def get_observation_discrete(self, curr_pos=None):
+        continuous_obs = self.get_observation_continuous(curr_pos)
+        return (round(continuous_obs[0], 1), round(continuous_obs[1], 1), round(continuous_obs[2], 1))
+
     # Takes in position of robot
     # Returns closest observation from obs_space
-    def get_observation_discrete(self, curr_pos=None):
+    def get_observation_closest_state(self, curr_pos=None):
         if isinstance(curr_pos, np.ndarray):
             curr_pos = curr_pos[0]
         elif curr_pos == None: # Default
@@ -98,19 +103,19 @@ class RobotDoorsExperiment():
 
     def take_action(self, action):
         if isinstance(action, str):
-            i_action = self.action_space.index(action)
+            i_action = self.action_space.index(action)-1
         else:
             i_action = action
         i_state = self.state_space.index(self.robot_state)
 
         # If the robot tries to open door, check for it in reward function
-        if i_action == 1:
+        if i_action == 0:
             self.open_action = True
         else:
             self.open_action = False
 
         # Take the action, return
-        i_next = np.clip(i_state + i_action - 1, 0, len(self.state_space)-1)
+        i_next = np.clip(i_state + i_action, 0, len(self.state_space)-1)
         next_state = self.state_space[i_next]
         self.robot_state = next_state
         return next_state
@@ -141,7 +146,7 @@ def generate_data(steps=10, episodes=10):
         experiment = RobotDoorsExperiment()
         trajectory = []
         for j in range(steps):
-            curr_action = np.random.choice([0,1,2])
+            curr_action = np.random.choice([-1,0,1])
             experiment.take_action(curr_action)
             # TODO(slu): standardize to discrete observations in generator for POMCP
             res = experiment.get_observation_discrete() + (experiment.get_reward(),) + (curr_action,)
