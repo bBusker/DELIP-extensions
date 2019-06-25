@@ -2,6 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import utils
 import pomcp
+import model
 
 
 class RobotDoorsExperiment():
@@ -18,6 +19,13 @@ class RobotDoorsExperiment():
         self.robot_state = self.state_space[np.searchsorted(self.state_space, self.initial_robot_state)]
         self.open_action = False
 
+        self.DELIP_model = None
+
+    # Load a DELIP model
+    def load_model(self, filepath):
+        self.DELIP_model = model.DELIP_model(latent_dim=4, input_timesteps=None)
+        self.DELIP_model.vae_model.load_weights(filepath, by_name=True)
+
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
     def generate_step_oracle(self, state, action):
@@ -32,7 +40,12 @@ class RobotDoorsExperiment():
 
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
-    def generate_step_vi(self, state, action):
+    def generate_step_DELIP(self, state, action):
+        assert self.DELIP_model is not None
+
+        observation, reward, next_state, latent_state, latent_sample = self.DELIP_model.decoder_model(state)
+
+
         observation = self.get_observation_discrete(self.robot_state)
         reward = self.get_reward(self.robot_state, open)
         next_state = self.take_action(action)

@@ -39,13 +39,15 @@ class DELIP_model(Model):
         rewards = TimeDistributed(Dense(units=100, activation='relu'),name='rew3')(rewards)
         rewards = TimeDistributed(Dense(units=1 * 2),name='rew_out')(rewards)
 
+        next_state = TimeDistributed(Dense(units=self.latent_dim*2, activation='linear'), name='next_state')(decoder_in)
+
         # Create Posterior and Decoder Models
         self.posterior_model = Model(inputs=timestep_data, outputs=latent_sample, name='encoder')
-        self.decoder_model = Model(inputs=decoder_in, outputs=[observations, rewards], name='decoder')
+        self.decoder_model = Model(inputs=decoder_in, outputs=[observations, rewards, next_state], name='decoder')
 
         # Create VAE Model
         vae = self.decoder_model(self.posterior_model(timestep_data))
-        self.vae_model = Model(inputs=timestep_data, outputs=vae+[latent_state])
+        self.vae_model = Model(inputs=timestep_data, outputs=vae+[latent_state]+[latent_sample])
 
     def reparameterize_w_logvar(self, mean, logvar):
         eps = tf.random_normal(shape=tf.shape(mean))
