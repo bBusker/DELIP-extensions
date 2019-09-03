@@ -158,5 +158,29 @@ def test_model():
         planner.UpdateBelief(action, observation)
     print("Model took {} timesteps with pomcp simtime {}. Got cumulative reward {}!".format(timesteps, pomcp_timeout, cum_rew))
 
+def testing():
+    timesteps = 100
+    episodes = 10
+    model_filepath = './trained_models/with_next_state_1layerNN/DELIP_model_vae_ep2645_loss-4.63.hdf5'
+
+    #experiment = exp.RobotDoorsExperiment()
+    data = exp.generate_data(timesteps, episodes)
+    data = tf.constant(data, dtype=tf.float32)
+    data_t = tf.data.Dataset.from_tensor_slices(data)
+
+    model = DELIP.DELIP_model(latent_dim=4, input_timesteps=timesteps)
+    model.vae_model.load_weights(model_filepath)
+
+    for temp in data_t.batch(1):
+        print(temp)
+        obs, rew, ns, lst, lsa = model.vae_model(temp)
+        obs_s = model.reparameterize_layer(obs[0]).numpy().astype(np.float64).round(1).tolist()
+        rew_s = model.reparameterize_layer(rew[0]).numpy().astype(np.float64).round(1).tolist()
+        print(obs_s)
+
+
+    print("testing")
+
+
 if __name__ == "__main__":
-    test_model()
+    testing()

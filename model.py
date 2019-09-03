@@ -37,8 +37,8 @@ def create_vae(input_timesteps, latent_dim, reparameterize_layer):
 
     state_action = Concatenate()([latent_sample, action_data])
     next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns1')(state_action)
-    next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns2')(next_state)
-    next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns3')(next_state)
+    #next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns2')(next_state)
+    #next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns3')(next_state)
     next_state = TimeDistributed(Dense(units=latent_dim * 2), name='next_state')(next_state)
 
     # Create VAE Model
@@ -61,8 +61,8 @@ def create_decoder(input_timesteps, latent_dim):
 
     state_action = Concatenate()([decoder_in, action_data])
     next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns1')(state_action)
-    next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns2')(next_state)
-    next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns3')(next_state)
+    #next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns2')(next_state)
+    #next_state = TimeDistributed(Dense(units=100, activation='relu'), name='ns3')(next_state)
     next_state = TimeDistributed(Dense(units=latent_dim * 2), name='next_state')(next_state)
 
     return Model(inputs=[decoder_in, action_data],
