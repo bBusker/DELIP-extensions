@@ -6,7 +6,7 @@ class DELIP_model(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.rnn_layer = nn.LSTM(input_size=4, hidden_size=10, bidirectional=True)
+        self.rnn_layer = nn.LSTM(input_size=4, hidden_size=10, bidirectional=True, batch_first=True)
         self.prev_rnn_states = None
         self.latent_layer = nn.Linear(20, 8)
         self.obs_out = nn.Sequential(

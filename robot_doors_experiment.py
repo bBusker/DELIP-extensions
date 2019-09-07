@@ -2,8 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 import utils
 import pomcp
-# import model
-# import tensorflow as tf
+import model
+import tensorflow as tf
 
 class RobotDoorsExperiment():
     def __init__(self):
@@ -19,12 +19,12 @@ class RobotDoorsExperiment():
         self.robot_state = self.state_space[np.searchsorted(self.state_space, self.initial_robot_state)]
         self.open_action = False
 
-    #     self.DELIP_model = None
-    #
-    # # Load a DELIP model
-    # def load_model(self, filepath):
-    #     self.DELIP_model = model.DELIP_model(latent_dim=2, input_timesteps=None)
-    #     self.DELIP_model.decoder_model.load_weights(filepath, by_name=True)
+        self.DELIP_model = None
+
+    # Load a DELIP model
+    def load_model(self, filepath):
+        self.DELIP_model = model.DELIP_model(latent_dim=2, input_timesteps=None)
+        self.DELIP_model.decoder_model.load_weights(filepath, by_name=True)
 
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
@@ -40,18 +40,18 @@ class RobotDoorsExperiment():
 
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
-    # def generate_step_DELIP(self, state, action):
-    #     assert self.DELIP_model is not None
-    #     state = tf.reshape(tf.constant(state, dtype=tf.float32), (1,1,2))
-    #     action = tf.reshape(tf.constant(self.action_space.index(action)-1, dtype=tf.float32), (1,1,1))
-    #     observation, reward, next_state = self.DELIP_model.decoder_model([state, action])
-    #
-    #     obs_sample = (tuple)(self.DELIP_model.reparameterize_layer(observation[0]).numpy().astype(np.float64).round(1).tolist()[0])
-    #     #rew_sample = (tuple)(self.DELIP_model.reparameterize_layer(reward[0]).numpy().astype(np.float64).round(1).tolist()[0])  # TODO(slu): do I need to round reward???
-    #     rew_sample = self.DELIP_model.reparameterize_layer(reward[0])[0][0].numpy()
-    #     ns_sample = (tuple)(self.DELIP_model.reparameterize_layer(next_state[0]).numpy().astype(np.float64).round(1).tolist()[0])
-    #
-    #     return ns_sample, obs_sample, rew_sample
+    def generate_step_DELIP(self, state, action):
+        assert self.DELIP_model is not None
+        state = tf.reshape(tf.constant(state, dtype=tf.float32), (1,1,2))
+        action = tf.reshape(tf.constant(self.action_space.index(action)-1, dtype=tf.float32), (1,1,1))
+        observation, reward, next_state = self.DELIP_model.decoder_model([state, action])
+
+        obs_sample = (tuple)(self.DELIP_model.reparameterize_layer(observation[0]).numpy().astype(np.float64).round(1).tolist()[0])
+        #rew_sample = (tuple)(self.DELIP_model.reparameterize_layer(reward[0]).numpy().astype(np.float64).round(1).tolist()[0])  # TODO(slu): do I need to round reward???
+        rew_sample = self.DELIP_model.reparameterize_layer(reward[0])[0][0].numpy()
+        ns_sample = (tuple)(self.DELIP_model.reparameterize_layer(next_state[0]).numpy().astype(np.float64).round(1).tolist()[0])
+
+        return ns_sample, obs_sample, rew_sample
 
     # Takes in position of robot
     # Returns calculated observation
