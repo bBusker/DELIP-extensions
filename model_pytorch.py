@@ -43,10 +43,7 @@ class DELIP_model(nn.Module):
         return mu + eps*std
 
     def forward(self, input):
-        if self.prev_rnn_states is not None:
-            hidden, rnn_states = self.rnn_layer(input[0], self.prev_rnn_states)
-        else:
-            hidden, rnn_states = self.rnn_layer(input[0])
+        hidden, rnn_states = self.rnn_layer(input[0])
         # self.prev_rnn_states = rnn_states
 
         latent = self.latent_layer(hidden)
