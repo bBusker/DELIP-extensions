@@ -56,7 +56,7 @@ def training():
                 obs_loss = loss_func(obs, data[:,:,:3])
                 rew_loss = loss_func(rew, data[:,:,3,].unsqueeze(-1))
                 next_state_loss = loss_func(next_state[:,:-1,:], sample[:,1:,:])
-                KLD_loss = -0.05 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+                KLD_loss = -0.01 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
                 obs_loss_total += obs_loss.detach().item()
                 rew_loss_total += rew_loss.detach().item()

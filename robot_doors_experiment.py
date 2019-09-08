@@ -118,7 +118,7 @@ class RobotDoorsExperiment():
 
         # Take the action, return
         # i_next = np.clip(i_state + i_action, 0, len(self.state_space)-1)
-        next_state = self.robot_state + action
+        next_state = self.robot_state + i_action
         closest_in_statespace = np.searchsorted(self.state_space, next_state)
         next_state_clipped = self.state_space[np.clip(closest_in_statespace, 0, len(self.state_space)-1)]
         self.robot_state = next_state_clipped
