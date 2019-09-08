@@ -3,7 +3,9 @@ from matplotlib import pyplot as plt
 import utils
 import pomcp
 import model
+import model_pytorch
 import tensorflow as tf
+import torch
 
 class RobotDoorsExperiment():
     def __init__(self):
@@ -23,8 +25,9 @@ class RobotDoorsExperiment():
 
     # Load a DELIP model
     def load_model(self, filepath):
-        self.DELIP_model = model.DELIP_model(latent_dim=2, input_timesteps=None)
-        self.DELIP_model.decoder_model.load_weights(filepath, by_name=True)
+        self.DELIP_model = model_pytorch.DELIP_model()
+        self.DELIP_model.load_state_dict(torch.load(filepath))
+        self.DELIP_model.eval()
 
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
@@ -42,16 +45,15 @@ class RobotDoorsExperiment():
     # Returns value of next_state, observation, and reward
     def generate_step_DELIP(self, state, action):
         assert self.DELIP_model is not None
-        state = tf.reshape(tf.constant(state, dtype=tf.float32), (1,1,2))
-        action = tf.reshape(tf.constant(self.action_space.index(action)-1, dtype=tf.float32), (1,1,1))
-        observation, reward, next_state = self.DELIP_model.decoder_model([state, action])
+        state = torch.Tensor(state)
+        action = torch.Tensor([self.action_space.index(action)-1])
 
-        obs_sample = (tuple)(self.DELIP_model.reparameterize_layer(observation[0]).numpy().astype(np.float64).round(1).tolist()[0])
-        #rew_sample = (tuple)(self.DELIP_model.reparameterize_layer(reward[0]).numpy().astype(np.float64).round(1).tolist()[0])  # TODO(slu): do I need to round reward???
-        rew_sample = self.DELIP_model.reparameterize_layer(reward[0])[0][0].numpy()
-        ns_sample = (tuple)(self.DELIP_model.reparameterize_layer(next_state[0]).numpy().astype(np.float64).round(1).tolist()[0])
+        next_state, observation, reward = self.DELIP_model.decode(state, action)
+        next_state = tuple([round(i,2) for i in next_state.tolist()])
+        observation = tuple([round(i,1) for i in observation.tolist()])
+        reward = tuple([round(i,0) for i in reward.tolist()])[0]
 
-        return ns_sample, obs_sample, rew_sample
+        return next_state, observation, reward
 
     # Takes in position of robot
     # Returns calculated observation
@@ -106,7 +108,7 @@ class RobotDoorsExperiment():
             i_action = self.action_space.index(action)-1
         else:
             i_action = action
-        i_state = self.state_space.index(self.robot_state)
+        # i_state = self.state_space.index(self.robot_state)
 
         # If the robot tries to open door, check for it in reward function
         if i_action == 0:
@@ -115,10 +117,12 @@ class RobotDoorsExperiment():
             self.open_action = False
 
         # Take the action, return
-        i_next = np.clip(i_state + i_action, 0, len(self.state_space)-1)
-        next_state = self.state_space[i_next]
-        self.robot_state = next_state
-        return next_state
+        # i_next = np.clip(i_state + i_action, 0, len(self.state_space)-1)
+        next_state = self.robot_state + action
+        closest_in_statespace = np.searchsorted(self.state_space, next_state)
+        next_state_clipped = self.state_space[np.clip(closest_in_statespace, 0, len(self.state_space)-1)]
+        self.robot_state = next_state_clipped
+        return next_state_clipped
 
     def is_terminal(self, state):
         target_loc = self.door_locations[self.goal_door]

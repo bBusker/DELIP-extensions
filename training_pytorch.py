@@ -31,10 +31,11 @@ def training():
 
     print("initializing dataset")
     train_dataset = RobotDoorsDataset(total_episodes, trajectory_timesteps)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=0, collate_fn=cat_collate)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=0, collate_fn=cat_collate, shuffle=True)
 
     try:
         print("beginning training")
+        print("dataset size: {}".format(len(train_dataset)))
 
         model.train()
         model.cuda()
@@ -85,7 +86,31 @@ def training():
     except KeyboardInterrupt:
         torch.save(model.state_dict(), "./delip_model")
 
+    torch.save(model.state_dict(), "./delip_model")
     return model
+
+def temp():
+    trajectory_timesteps = 100
+    total_episodes = 1000
+    epochs = 10000
+    batch_size = 20
+    adam_lr = 1e-3
+    print_freq = 25
+    model = DELIP_model()
+    model.load_state_dict(torch.load("./delip_model"))
+    model.eval()
+
+    print("initializing dataset")
+    train_dataset = RobotDoorsDataset(total_episodes, trajectory_timesteps)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=0, collate_fn=cat_collate)
+
+    dataloader = iter(train_dataloader)
+    with open("./initial_states", "w") as f:
+        with torch.no_grad():
+            for data in dataloader:
+                next_state, obs, rew, mu, logvar, sample = model((data[:, :, :4], data[:, :, 4].unsqueeze(-1)))
+                print("hello")
+
 
 def cat_collate(batch):
     return torch.cat(batch, axis=0)

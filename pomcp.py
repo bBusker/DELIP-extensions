@@ -3,7 +3,7 @@ import numpy as np
 from numpy.random import binomial, choice
 from joblib import Parallel, delayed, parallel_backend
 import multiprocessing
-
+import torch
 
 # POMCP solver
 class POMCP():
@@ -72,7 +72,9 @@ class POMCP():
         # Repeat Simulations until timeout
         for _ in range(self.timeout):
             if Bh == []:
-                s = (0,0)
+                # s = torch.normal(mean=0.0, std=1.0, size=(4,))
+                temp = torch.normal(mean=0.0, std=1.0, size=(4,)).tolist()
+                s = tuple(round(i,1) for i in temp)
             else:
                 rand_index = np.random.randint(len(Bh))
                 s = Bh[rand_index]
@@ -145,7 +147,8 @@ class POMCP():
     # Samples from posterior after action and observation
     def PosteriorSample(self, Bh, action, observation):
         if Bh == []:
-            s = (0,0)#s = choice(self.states)
+            temp = torch.normal(mean=0.0, std=1.0, size=(4,)).tolist()
+            s = tuple(round(i, 1) for i in temp)
         else:
             rand_index = np.random.randint(len(Bh))
             s = Bh[rand_index]

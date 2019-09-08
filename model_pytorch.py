@@ -58,9 +58,10 @@ class DELIP_model(nn.Module):
         return state_out, obs_out, rew_out, mu, logvar, sample
 
     def decode(self, latent, action):
-        state_out = self.state_out(latent)
-        obs_out = self.obs_out(latent)
-        rew_out = self.rew_out(latent)
+        with torch.no_grad():
+            state_out = self.state_out(torch.cat((latent, action)))
+            obs_out = self.obs_out(latent)
+            rew_out = self.rew_out(latent)
 
         return state_out, obs_out, rew_out
 
