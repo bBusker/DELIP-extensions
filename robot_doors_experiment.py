@@ -49,9 +49,9 @@ class RobotDoorsExperiment():
         action = torch.Tensor([self.action_space.index(action)-1])
 
         next_state, observation, reward = self.DELIP_model.decode(state, action)
-        next_state = tuple([round(i,2) for i in next_state.tolist()])
-        observation = tuple([round(i,1) for i in observation.tolist()])
-        reward = tuple([round(i,0) for i in reward.tolist()])[0]
+        next_state = tuple([round(i,3) for i in next_state.tolist()])
+        observation = tuple([round(i,3) for i in observation.tolist()])
+        reward = tuple([round(i,2) for i in reward.tolist()])[0]
 
         return next_state, observation, reward
 
@@ -94,7 +94,7 @@ class RobotDoorsExperiment():
         res = 0
         if open:
             target_loc = self.door_locations[self.goal_door]
-            if target_loc-1 <= curr_pos <= target_loc+1:  # Correct door
+            if target_loc-1.1 <= curr_pos <= target_loc+1.1:  # Correct door
                 res += 1
         res += (np.tanh(5*(curr_pos+13)) - 1)/2  # Left wall
         res += (-np.tanh(5*(curr_pos-13)) - 1)/2  # Right wall

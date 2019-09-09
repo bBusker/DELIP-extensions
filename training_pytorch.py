@@ -5,6 +5,8 @@ from torch import optim
 from torch.utils.data import DataLoader
 from robot_doors_dataset import RobotDoorsDataset
 import sys
+import pickle
+
 
 def training():
     gettrace = getattr(sys, 'gettrace', None)
@@ -16,8 +18,8 @@ def training():
         adam_lr = 1e-3
         print_freq = 1
     else:
-        trajectory_timesteps = 100
-        total_episodes = 1000
+        trajectory_timesteps = 150
+        total_episodes = 2000
         epochs = 10000
         batch_size = 20
         adam_lr = 1e-3
@@ -56,7 +58,7 @@ def training():
                 obs_loss = loss_func(obs, data[:,:,:3])
                 rew_loss = loss_func(rew, data[:,:,3,].unsqueeze(-1))
                 next_state_loss = loss_func(next_state[:,:-1,:], sample[:,1:,:])
-                KLD_loss = -0.01 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+                KLD_loss = -0.00 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
                 obs_loss_total += obs_loss.detach().item()
                 rew_loss_total += rew_loss.detach().item()
@@ -89,7 +91,7 @@ def training():
     torch.save(model.state_dict(), "./delip_model")
     return model
 
-def temp():
+def generate_initial_beliefs():
     trajectory_timesteps = 100
     total_episodes = 1000
     epochs = 10000
@@ -99,18 +101,23 @@ def temp():
     model = DELIP_model()
     model.load_state_dict(torch.load("./delip_model"))
     model.eval()
+    model.cuda()
 
     print("initializing dataset")
     train_dataset = RobotDoorsDataset(total_episodes, trajectory_timesteps)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=0, collate_fn=cat_collate)
 
     dataloader = iter(train_dataloader)
-    with open("./initial_states", "w") as f:
-        with torch.no_grad():
-            for data in dataloader:
-                next_state, obs, rew, mu, logvar, sample = model((data[:, :, :4], data[:, :, 4].unsqueeze(-1)))
-                print("hello")
-
+    first_states = ()
+    round_func = lambda x: round(x, 3)
+    with torch.no_grad():
+        for data in dataloader:
+            next_state, obs, rew, mu, logvar, sample = model((data[:, :, :4], data[:, :, 4].unsqueeze(-1)))
+            unrounded_states = sample[:,1,:].detach().cpu().tolist()
+            rounded_states = tuple([tuple(list(map(round_func, i))) for i in unrounded_states])
+            first_states += rounded_states
+    with open("initial_states.pkl", "wb") as f:
+        pickle.dump(first_states, f)
 
 def cat_collate(batch):
     return torch.cat(batch, axis=0)
@@ -119,4 +126,5 @@ def cat_collate(batch):
 if __name__ == "__main__":
     # torch.multiprocessing.set_start_method('spawn')
     training()
+    generate_initial_beliefs()
     print("hello")

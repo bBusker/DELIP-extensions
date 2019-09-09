@@ -11,7 +11,7 @@ class POMCP():
     # c = higher value -> encourage UCB exploration
     # threshold = threshold below which discount is too little
     # timeout = number of runs from node
-    def __init__(self, generator, gamma=0.95, c=1, threshold=0.005, timeout=10000, no_particles=1200):
+    def __init__(self, generator, gamma=0.95, c=1, threshold=0.005, timeout=10000, no_particles=2000):
         self.gamma = gamma
         if gamma >= 1:
             raise ValueError("gamma should be less than 1.")
@@ -24,10 +24,11 @@ class POMCP():
 
         # give state, action, and observation space
 
-    def initialize(self, S, A, O):
+    def initialize(self, S, A, O, initial_belief):
         self.states = S
         self.actions = A
         self.observations = O
+        self.initial_belief = initial_belief
 
     # searchBest action to take
     # UseUCB = False to pick best value at end of Search()
@@ -73,8 +74,10 @@ class POMCP():
         for _ in range(self.timeout):
             if Bh == []:
                 # s = torch.normal(mean=0.0, std=1.0, size=(4,))
-                temp = torch.normal(mean=0.0, std=1.0, size=(4,)).tolist()
-                s = tuple(round(i,1) for i in temp)
+                # temp = torch.normal(mean=0.0, std=1.0, size=(4,)).tolist()
+                # s = tuple(round(i,1) for i in temp)
+                rand_index = np.random.randint(len(self.initial_belief))
+                s = self.initial_belief[rand_index]
             else:
                 rand_index = np.random.randint(len(Bh))
                 s = Bh[rand_index]
@@ -147,8 +150,10 @@ class POMCP():
     # Samples from posterior after action and observation
     def PosteriorSample(self, Bh, action, observation):
         if Bh == []:
-            temp = torch.normal(mean=0.0, std=1.0, size=(4,)).tolist()
-            s = tuple(round(i, 1) for i in temp)
+            # temp = torch.normal(mean=0.0, std=1.0, size=(4,)).tolist()
+            # s = tuple(round(i, 1) for i in temp)
+            rand_index = np.random.randint(len(self.initial_belief))
+            s = self.initial_belief[rand_index]
         else:
             rand_index = np.random.randint(len(Bh))
             s = Bh[rand_index]

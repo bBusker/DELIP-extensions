@@ -1,17 +1,21 @@
 import torch
 import robot_doors_experiment as exp
 import pomcp
+import pickle
 
 def test_model():
-    timesteps = 1000
+    timesteps = 100
     pomcp_timeout = 50
     model_filepath = 'delip_model'
 
     experiment = exp.RobotDoorsExperiment()
     experiment.load_model(model_filepath)
 
-    planner = pomcp.POMCP(experiment.generate_step_DELIP, timeout=pomcp_timeout)
-    planner.initialize(experiment.state_space, experiment.action_space, experiment.obs_space)
+    # planner = pomcp.POMCP(experiment.generate_step_DELIP, timeout=pomcp_timeout)
+    planner = pomcp.POMCP(experiment.generate_step_oracle, timeout=pomcp_timeout)
+    with open("./initial_states.pkl", "rb") as f:
+        initial_belief = pickle.load(f)
+    planner.initialize(experiment.state_space, experiment.action_space, experiment.obs_space, initial_belief)
 
     cum_rew = 0
     print("Starting robot experiment with model {}".format(model_filepath))
@@ -20,7 +24,7 @@ def test_model():
         print(planner.tree.nodes[-1][:])
         print(action)
         experiment.take_action(action)
-        print("Robot state: {}".format(experiment.get_state()))
+        print("Robot state: {}, Reward: {}".format(experiment.get_state(), experiment.get_reward()))
         cum_rew += experiment.get_reward()
         observation = experiment.get_observation_discrete()
         planner.tree.prune_after_action(action, observation)
