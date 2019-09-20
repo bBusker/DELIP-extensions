@@ -4,7 +4,6 @@ import utils
 import pomcp
 import model
 import model_pytorch
-import tensorflow as tf
 import torch
 
 class RobotDoorsExperiment():
@@ -32,28 +31,30 @@ class RobotDoorsExperiment():
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
     def generate_step_oracle(self, state, action):
-        i_action = self.action_space.index(action)-1
-        i_state = self.state_space.index(state)
+        mag_action = self.action_space.index(action)-1
 
-        i_next = np.clip(i_state+i_action, 0, len(self.state_space)-1)
-        next_state = self.state_space[i_next]
-        observation = self.get_observation_discrete(next_state)  # TODO: should this be observation indicies?
-        reward = self.get_reward(next_state, action == 0)
-        return next_state, observation, reward
+        next_state = state + mag_action
+        closest_in_statespace = np.searchsorted(self.state_space, next_state)
+        next_state_clipped = self.state_space[np.clip(closest_in_statespace, 0, len(self.state_space) - 1)]
+
+        observation = self.get_observation_discrete(next_state_clipped)  # TODO: should this be observation indicies?
+        reward = self.get_reward(next_state, mag_action == 0)
+        return next_state_clipped, observation, reward
 
     # Takes in state and action values
     # Returns value of next_state, observation, and reward
     def generate_step_DELIP(self, state, action):
-        assert self.DELIP_model is not None
-        state = torch.Tensor(state)
-        action = torch.Tensor([self.action_space.index(action)-1])
+        with torch.no_grad():
+            assert self.DELIP_model is not None
+            state = torch.Tensor(state)
+            action = torch.Tensor([self.action_space.index(action)-1])
 
-        next_state, observation, reward = self.DELIP_model.decode(state, action)
-        next_state = tuple([round(i,3) for i in next_state.tolist()])
-        observation = tuple([round(i,3) for i in observation.tolist()])
-        reward = tuple([round(i,2) for i in reward.tolist()])[0]
+            next_state, observation, reward = self.DELIP_model.decode(state, action)
+            next_state = tuple([round(i,3) for i in next_state.tolist()])
+            observation = tuple([round(i,2) for i in observation.tolist()])
+            reward = tuple([round(i,2) for i in reward.tolist()])[0]
 
-        return next_state, observation, reward
+            return next_state, observation, reward
 
     # Takes in position of robot
     # Returns calculated observation
@@ -72,7 +73,7 @@ class RobotDoorsExperiment():
 
     def get_observation_discrete(self, curr_pos=None):
         continuous_obs = self.get_observation_continuous(curr_pos)
-        return (round(continuous_obs[0], 1), round(continuous_obs[1], 1), round(continuous_obs[2], 1))
+        return (round(continuous_obs[0], 2), round(continuous_obs[1], 2), round(continuous_obs[2], 2))
 
     # Takes in position of robot
     # Returns closest observation from obs_space
@@ -105,20 +106,20 @@ class RobotDoorsExperiment():
 
     def take_action(self, action):
         if isinstance(action, str):
-            i_action = self.action_space.index(action)-1
+            mag_action = self.action_space.index(action)-1
         else:
-            i_action = action
+            mag_action = action
         # i_state = self.state_space.index(self.robot_state)
 
         # If the robot tries to open door, check for it in reward function
-        if i_action == 0:
+        if mag_action == 0:
             self.open_action = True
         else:
             self.open_action = False
 
         # Take the action, return
-        # i_next = np.clip(i_state + i_action, 0, len(self.state_space)-1)
-        next_state = self.robot_state + i_action
+        # i_next = np.clip(i_state + mag_action, 0, len(self.state_space)-1)
+        next_state = self.robot_state + mag_action
         closest_in_statespace = np.searchsorted(self.state_space, next_state)
         next_state_clipped = self.state_space[np.clip(closest_in_statespace, 0, len(self.state_space)-1)]
         self.robot_state = next_state_clipped

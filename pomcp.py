@@ -24,6 +24,7 @@ class POMCP():
 
         # give state, action, and observation space
 
+    # initial_belief: list of initial belief states
     def initialize(self, S, A, O, initial_belief):
         self.states = S
         self.actions = A
@@ -61,7 +62,7 @@ class POMCP():
                 for action, child in children.items():
                     node_value = self.tree.nodes[child][3]
                     # keep max
-                    if max_value is None or max_value < node_value:
+                    if max_value is None or node_value > max_value:
                         max_value = node_value
                         result = child
                         resulta = action

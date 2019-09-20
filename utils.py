@@ -1,4 +1,5 @@
 import numpy as np
+from visdom import Visdom
 from itertools import chain, combinations
 
 
@@ -48,6 +49,7 @@ class BuildTree():
     def getObservationNode(self,h,sample_observation):
         # Check if a given observation node has been visited
         if sample_observation not in list(self.nodes[h][1].keys()):
+            print("couldnt find observation")
             # If not create the node
             self.ExpandTreeFrom(h, sample_observation)
         # Get the nodes index
@@ -87,6 +89,22 @@ class BuildTree():
         # set new_root as root (key = -1)
         self.make_new_root(new_root)
 
+class VisdomLinePlotter(object):
+    """Plots to Visdom"""
+    def __init__(self, env_name='main'):
+        self.viz = Visdom()
+        self.env = env_name
+        self.plots = {}
+    def plot(self, var_name, x, y, title="losses"):
+        if title not in self.plots:
+            self.plots[title] = self.viz.line(X=np.array([x, x]), Y=np.array([y, y]), env=self.env, opts=dict(
+                legend=[var_name],
+                title=title,
+                xlabel='Epochs',
+                ylabel="loss"
+            ))
+        else:
+            self.viz.line(X=np.array([x]), Y=np.array([y]), env=self.env, win=self.plots[title], name=var_name, update = 'append')
 
 # UCB score calculation
 def UCB(N,n,V,c = 1): # N=Total, n= local, V = value, c = parameter

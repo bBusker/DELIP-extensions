@@ -51,7 +51,7 @@ class DELIP_model(nn.Module):
         logvar = latent[:,:,4:]
         sample = self.reparameterize(mu, logvar)
 
-        state_out = self.state_out(torch.cat((sample, input[1]), axis=2))
+        state_out = self.state_out(torch.cat((sample.detach(), input[1]), axis=2))
         obs_out = self.obs_out(sample)
         rew_out = self.rew_out(sample)
 

@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from robot_doors_dataset import RobotDoorsDataset
 import sys
 import pickle
+import utils
 
 
 def training():
@@ -18,11 +19,11 @@ def training():
         adam_lr = 1e-3
         print_freq = 1
     else:
-        trajectory_timesteps = 150
-        total_episodes = 2000
-        epochs = 10000
+        trajectory_timesteps = 100
+        total_episodes = 1000
+        epochs = 15000
         batch_size = 20
-        adam_lr = 1e-3
+        adam_lr = 5e-4
         print_freq = 25
 
     model = DELIP_model()
@@ -35,6 +36,8 @@ def training():
     train_dataset = RobotDoorsDataset(total_episodes, trajectory_timesteps)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=0, collate_fn=cat_collate, shuffle=True)
 
+    plotter = utils.VisdomLinePlotter()
+
     try:
         print("beginning training")
         print("dataset size: {}".format(len(train_dataset)))
@@ -43,7 +46,7 @@ def training():
         model.cuda()
 
         # for batch_idx, (data, _) in enumerate(train_loader):
-        for i in range(1, epochs+1):
+        for epoch in range(1, epochs+1):
             obs_loss_total = 0
             rew_loss_total = 0
             next_state_loss_total = 0
@@ -58,7 +61,7 @@ def training():
                 obs_loss = loss_func(obs, data[:,:,:3])
                 rew_loss = loss_func(rew, data[:,:,3,].unsqueeze(-1))
                 next_state_loss = loss_func(next_state[:,:-1,:], sample[:,1:,:])
-                KLD_loss = -0.00 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+                KLD_loss = -0.0 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
                 obs_loss_total += obs_loss.detach().item()
                 rew_loss_total += rew_loss.detach().item()
@@ -69,8 +72,8 @@ def training():
                 total_loss.backward()
                 optimizer.step()
 
-            if i%print_freq == 0:
-                print("Epoch: {} Obs_loss: {} Rew_loss: {} Next_state_loss: {} KLD_loss: {}".format(i, obs_loss_total, rew_loss_total, next_state_loss_total, KLD_loss_total))
+            if epoch%print_freq == 0:
+                print("Epoch: {} Obs_loss: {} Rew_loss: {} Next_state_loss: {} KLD_loss: {}".format(epoch, obs_loss_total, rew_loss_total, next_state_loss_total, KLD_loss_total))
                 print("Sample next_state")
                 print(next_state[0][10][:].detach().cpu().numpy())
                 print(sample[0][6][:].detach().cpu().numpy())
@@ -83,9 +86,16 @@ def training():
                 print("Logvar")
                 print(logvar[0][10][:].detach().cpu().numpy())
 
+                plotter.plot("obs_loss", epoch, obs_loss_total)
+                plotter.plot("rew_loss", epoch, rew_loss_total)
+                plotter.plot("next_state_loss", epoch, next_state_loss_total)
+                plotter.plot("KLD_loss", epoch, KLD_loss_total, title="KLD_losses")
 
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = adam_lr*(1-(epoch/epochs))
 
     except KeyboardInterrupt:
+        print("Saving model")
         torch.save(model.state_dict(), "./delip_model")
 
     torch.save(model.state_dict(), "./delip_model")
@@ -103,7 +113,7 @@ def generate_initial_beliefs():
     model.eval()
     model.cuda()
 
-    print("initializing dataset")
+    print("initializing dataset for initial belief generation")
     train_dataset = RobotDoorsDataset(total_episodes, trajectory_timesteps)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=0, collate_fn=cat_collate)
 
